@@ -164,6 +164,13 @@ static void AssembleByte(unsigned bits, char val)
             if (!OutIndex) {
                 Error ("Sprite is too large for the Lynx");
             }
+        } else {
+            /* Add pad byte */
+            byte = 0;
+            OutBuffer[OutIndex++] = byte;
+            if (!OutIndex) {
+                Error ("Sprite is too large for the Lynx");
+            }
         }
         return;
     }
@@ -189,25 +196,13 @@ static void AssembleByte(unsigned bits, char val)
     } while (--bits);
 }
 
-static unsigned char ChoosePackagingMode(signed len, signed index, char ColorBits, char LineBuffer[512])
+static unsigned char ChoosePackagingMode(signed len, signed index, char LineBuffer[512])
 {
     --len;
     if (!len) {
         return 0;
     }
     if (LineBuffer[index] != LineBuffer[index + 1]) {
-        return 0;
-    }
-    if (ColorBits > 2) {
-        return 1;
-    }
-    if (LineBuffer[index] != LineBuffer[index + 2]) {
-        return 0;
-    }
-    if (ColorBits > 1) {
-        return 1;
-    }
-    if (LineBuffer[index] != LineBuffer[index + 3]) {
         return 0;
     }
     return 1;
@@ -235,22 +230,22 @@ static void WriteOutBuffer(StrBuf *D)
 static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask, char LineBuffer[512],
     int len, int LastOpaquePixel) {
 /*
-** The data starts with a byte count. It tells the number of bytes on this
-** line + 1.
-** Special case is a count of 1. It will change to next quadrant.
-** Other special case is 0. It will end the sprite.
-**
-** Ordinary data packet. These are bits in a stream.
-** 1=literal 0=packed
-** 4 bit count (+1)
-** for literal you put "count" values
-** for packed you repeat the value "count" times
-** Never use packed mode for one pixel
-** If the last bit on a line is 1 you need to add a byte of zeroes
-** A sequence 00000 ends a scan line
-**
-** All data is high nybble first
-*/
+ * The data starts with a byte count. It tells the number of bytes on this
+ * line + 1.
+ * Special case is a count of 1. It will change to next quadrant.
+ * Other special case is 0. It will end the sprite.
+ *
+ * Ordinary data packet. These are bits in a stream.
+ * 1=literal 0=packed
+ * 4 bit count (+1)
+ * for literal you put "count" values
+ * for packed you repeat the value "count" times
+ * Never use packed mode for one pixel
+ * If the last bit on a line is in use you need to add a byte of zeroes
+ * A sequence 00000 ends a scan line
+ *
+ * All data is high nybble first
+ */
     unsigned char V = 0;
     signed i;
     signed count;
@@ -272,7 +267,7 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
     case smPacked:
         i = 0;
         while (len) {
-            if (ChoosePackagingMode(len, i, ColorBits, LineBuffer)) {
+            if (ChoosePackagingMode(len, i, LineBuffer)) {
                 /* Make runlength packet */
                 V = LineBuffer[i];
                 ++i;
@@ -294,7 +289,7 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
                 *d_ptr++ = V;
                 --len;
                 count = 0;
-                while (ChoosePackagingMode(len, i, ColorBits, LineBuffer) == 0 && len && count != 15) {
+                while (ChoosePackagingMode(len, i, LineBuffer) == 0 && len && count != 15) {
                     V = LineBuffer[i++];
                     *d_ptr++ = V;
                     ++count;
@@ -309,7 +304,7 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
 
             }
         }
-        AssembleByte(8, 0);
+        AssembleByte(7, 0);
         /* Write the buffer to file */
         WriteOutBuffer(D);
         break;
@@ -321,7 +316,7 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
             }
             i = 0;
             while (len) {
-                if (ChoosePackagingMode(len, i, ColorBits, LineBuffer)) {
+                if (ChoosePackagingMode(len, i, LineBuffer)) {
                     /* Make runlength packet */
                     V = LineBuffer[i];
                     ++i;
@@ -343,7 +338,7 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
                     *d_ptr++ = V;
                     --len;
                     count = 0;
-                    while (ChoosePackagingMode(len, i, ColorBits, LineBuffer) == 0 && len && count != 15) {
+                    while (ChoosePackagingMode(len, i, LineBuffer) == 0 && len && count != 15) {
                         V = LineBuffer[i++];
                         *d_ptr++ = V;
                         ++count;
@@ -369,17 +364,17 @@ static void encodeSprite(StrBuf *D, enum Mode M, char ColorBits, char ColorMask,
 
 StrBuf* GenLynxSprite (const Bitmap* B, const Collection* A)
 /* Generate binary output in Lynx sprite format for the bitmap B. The output
-** is stored in a string buffer (which is actually a dynamic char array) and
-** returned.
-**
-** The Lynx will draw 4 quadrants:
-** - Down right
-** - Up right
-** - Up left
-** - Down left
-**
-** The sprite will end with a byte 0.
-*/
+ * is stored in a string buffer (which is actually a dynamic char array) and
+ * returned.
+ *
+ * The Lynx will draw 4 quadrants:
+ * - Down right
+ * - Up right
+ * - Up left
+ * - Down left
+ *
+ * The sprite will end with a byte 0.
+ */
 {
     enum Mode M;
     StrBuf* D;
@@ -401,6 +396,7 @@ StrBuf* GenLynxSprite (const Bitmap* B, const Collection* A)
     if (OY >= GetBitmapHeight (B)) {
         Error ("Action point Y cannot be larger than bitmap height");
     }
+    printf("OX = %d OY = %d\n", OX, OY);
 
     /* Output the image properties */
     Print (stdout, 1, "Image is %ux%u with %u colors%s\n",
@@ -552,3 +548,6 @@ StrBuf* GenLynxSprite (const Bitmap* B, const Collection* A)
     /* Return the converted bitmap */
     return D;
 }
+
+
+
