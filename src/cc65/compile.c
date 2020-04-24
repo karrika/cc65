@@ -38,6 +38,7 @@
 
 /* common */
 #include "debugflag.h"
+#include "segnames.h"
 #include "version.h"
 #include "xmalloc.h"
 #include "xsprintf.h"
@@ -170,8 +171,9 @@ static void Parse (void)
                 (CurTok.Tok != TOK_SEMI)) {
 
                 FuncDesc* D = GetFuncDesc (Decl.Type);
+
                 if (D->Flags & FD_EMPTY) {
-                    D->Flags = (D->Flags & ~(FD_EMPTY | FD_VARIADIC)) | FD_VOID_PARAM;
+                    D->Flags = (D->Flags & ~FD_EMPTY) | FD_VOID_PARAM;
                 }
             }
 
@@ -192,7 +194,7 @@ static void Parse (void)
 
                     /* This is a definition */
                     if (SymIsDef (Entry)) {
-                        Error ("Global variable `%s' has already been defined",
+                        Error ("Global variable '%s' has already been defined",
                                Entry->Name);
                     }
                     Entry->Flags |= SC_DEF;
@@ -204,11 +206,11 @@ static void Parse (void)
                         if (!IsTypeVoid (Decl.Type)) {
                             if (!IsTypeArray (Decl.Type)) {
                                 /* Size is unknown and not an array */
-                                Error ("Variable `%s' has unknown size", Decl.Ident);
+                                Error ("Variable '%s' has unknown size", Decl.Ident);
                             }
                         } else if (IS_Get (&Standard) != STD_CC65) {
                             /* We cannot declare variables of type void */
-                            Error ("Illegal type for variable `%s'", Decl.Ident);
+                            Error ("Illegal type for variable '%s'", Decl.Ident);
                         }
                     }
 
@@ -234,12 +236,12 @@ static void Parse (void)
 
                     if (IsTypeVoid (Decl.Type)) {
                         /* We cannot declare variables of type void */
-                        Error ("Illegal type for variable `%s'", Decl.Ident);
+                        Error ("Illegal type for variable '%s'", Decl.Ident);
                         Entry->Flags &= ~(SC_STORAGE | SC_DEF);
                     } else if (Size == 0) {
                         /* Size is unknown. Is it an array? */
                         if (!IsTypeArray (Decl.Type)) {
-                            Error ("Variable `%s' has unknown size", Decl.Ident);
+                            Error ("Variable '%s' has unknown size", Decl.Ident);
                         }
                         Entry->Flags &= ~(SC_STORAGE | SC_DEF);
                     } else {
@@ -256,7 +258,7 @@ static void Parse (void)
                         const char* bssName = GetSegName (SEG_BSS);
 
                         if (Entry->V.BssName && strcmp (Entry->V.BssName, bssName) != 0) {
-                            Error ("Global variable `%s' already was defined in the `%s' segment.",
+                            Error ("Global variable '%s' already was defined in the '%s' segment.",
                                    Entry->Name, Entry->V.BssName);
                         }
                         Entry->V.BssName = xstrdup (bssName);
@@ -286,7 +288,7 @@ static void Parse (void)
 
                     /* Function body. Check for duplicate function definitions */
                     if (SymIsDef (Entry)) {
-                        Error ("Body for function `%s' has already been defined",
+                        Error ("Body for function '%s' has already been defined",
                                Entry->Name);
                     }
 
@@ -418,6 +420,11 @@ void FinishCompile (void)
 /* Emit literals, externals, debug info, do cleanup and optimizations */
 {
     SymEntry* Entry;
+
+    /* Reset the BSS segment name to its default; so that the below strcmp()
+    ** will work as expected, at the beginning of the list of variables
+    */
+    SetSegName (SEG_BSS, SEGNAME_BSS);
 
     /* Walk over all global symbols:
     ** - for functions, do clean-up and optimizations

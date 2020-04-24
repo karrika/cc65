@@ -7,6 +7,7 @@ CBMS = c128   \
        c64    \
        cbm510 \
        cbm610 \
+       cx16   \
        pet    \
        plus4  \
        vic20
@@ -93,7 +94,7 @@ INSTALL = install
 
 define INSTALL_recipe
 
-$(if $(PREFIX),,$(error variable `PREFIX' must be set))
+$(if $(PREFIX),,$(error variable "PREFIX" must be set))
 $(INSTALL) -d $(DESTDIR)$(datadir)/$(dir)
 $(INSTALL) -m0644 ../$(dir)/*.* $(DESTDIR)$(datadir)/$(dir)
 

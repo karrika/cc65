@@ -102,7 +102,7 @@ static unsigned ParseInitInternal (Type* T, int AllowFlexibleMembers);
 static void DuplicateQualifier (const char* Name)
 /* Print an error message */
 {
-    Warning ("Duplicate qualifier: `%s'", Name);
+    Warning ("Duplicate qualifier: '%s'", Name);
 }
 
 
@@ -551,7 +551,7 @@ static SymEntry* StructOrUnionForwardDecl (const char* Name, unsigned Type)
         Entry = AddStructSym (Name, Type, 0, 0);
     } else if ((Entry->Flags & SC_TYPEMASK) != Type) {
         /* Already defined, but no struct */
-        Error ("Symbol `%s' is already different kind", Name);
+        Error ("Symbol '%s' is already different kind", Name);
     }
     return Entry;
 }
@@ -656,13 +656,16 @@ static SymEntry* ParseUnionDecl (const char* Name)
             /* Check for fields without a name */
             if (Decl.Ident[0] == '\0') {
                 /* In cc65 mode, we allow anonymous structs/unions within
-                ** a struct.
+                ** a union.
                 */
                 if (IS_Get (&Standard) >= STD_CC65 && IsClassStruct (Decl.Type)) {
                     /* This is an anonymous struct or union. Copy the fields
                     ** into the current level.
                     */
-                    CopyAnonStructFields (&Decl, 0);
+                    FieldSize = CopyAnonStructFields (&Decl, 0);
+                    if (FieldSize > UnionSize) {
+                        UnionSize = FieldSize;
+                    }
 
                 } else {
                     /* A non bit-field without a name is legal but useless */
@@ -1067,7 +1070,7 @@ static void ParseTypeSpec (DeclSpec* D, long Default, TypeCode Qualifiers)
                     Entry = FindTagSym (CurTok.Ident);
                     if (Entry) {
                         if (SymIsLocal (Entry) && (Entry->Flags & SC_ENUM) == 0) {
-                            Error ("Symbol `%s' is already different kind", Entry->Name);
+                            Error ("Symbol '%s' is already different kind", Entry->Name);
                         }
                     } else {
                         /* Insert entry into table ### */
@@ -1129,7 +1132,7 @@ static Type* ParamTypeCvt (Type* T)
 
 
 static void ParseOldStyleParamList (FuncDesc* F)
-/* Parse an old style (K&R) parameter list */
+/* Parse an old-style (K&R) parameter list */
 {
     /* Some fix point tokens that are used for error recovery */
     static const token_t TokenList[] = { TOK_COMMA, TOK_RPAREN, TOK_SEMI };
@@ -1208,10 +1211,10 @@ static void ParseOldStyleParamList (FuncDesc* F)
                         Sym->Flags &= ~SC_DEFTYPE;
                     } else {
                         /* Type has already been changed */
-                        Error ("Redefinition for parameter `%s'", Sym->Name);
+                        Error ("Redefinition for parameter '%s'", Sym->Name);
                     }
                 } else {
-                    Error ("Unknown identifier: `%s'", Decl.Ident);
+                    Error ("Unknown identifier: '%s'", Decl.Ident);
                 }
             }
 
@@ -1231,7 +1234,7 @@ static void ParseOldStyleParamList (FuncDesc* F)
 
 
 static void ParseAnsiParamList (FuncDesc* F)
-/* Parse a new style (ANSI) parameter list */
+/* Parse a new-style (ANSI) parameter list */
 {
     /* Parse params */
     while (CurTok.Tok != TOK_RPAREN) {
@@ -1288,7 +1291,7 @@ static void ParseAnsiParamList (FuncDesc* F)
         /* If the parameter is a struct or union, emit a warning */
         if (IsClassStruct (Decl.Type)) {
             if (IS_Get (&WarnStructParam)) {
-                Warning ("Passing struct by value for parameter `%s'", Decl.Ident);
+                Warning ("Passing struct by value for parameter '%s'", Decl.Ident);
             }
         }
 
@@ -1327,32 +1330,30 @@ static FuncDesc* ParseFuncDecl (void)
 
     /* Check for several special parameter lists */
     if (CurTok.Tok == TOK_RPAREN) {
-        /* Parameter list is empty */
-        F->Flags |= (FD_EMPTY | FD_VARIADIC);
+        /* Parameter list is empty (K&R-style) */
+        F->Flags |= FD_EMPTY;
     } else if (CurTok.Tok == TOK_VOID && NextTok.Tok == TOK_RPAREN) {
         /* Parameter list declared as void */
         NextToken ();
         F->Flags |= FD_VOID_PARAM;
     } else if (CurTok.Tok == TOK_IDENT &&
                (NextTok.Tok == TOK_COMMA || NextTok.Tok == TOK_RPAREN)) {
-        /* If the identifier is a typedef, we have a new style parameter list,
-        ** if it's some other identifier, it's an old style parameter list.
+        /* If the identifier is a typedef, we have a new-style parameter list;
+        ** if it's some other identifier, it's an old-style parameter list.
         */
         Sym = FindSym (CurTok.Ident);
         if (Sym == 0 || !SymIsTypeDef (Sym)) {
-            /* Old style (K&R) function. */
+            /* Old-style (K&R) function. */
             F->Flags |= FD_OLDSTYLE;
         }
     }
 
     /* Parse params */
     if ((F->Flags & FD_OLDSTYLE) == 0) {
-
-        /* New style function */
+        /* New-style function */
         ParseAnsiParamList (F);
-
     } else {
-        /* Old style function */
+        /* Old-style function */
         ParseOldStyleParamList (F);
     }
 
@@ -1509,7 +1510,7 @@ static void Declarator (const DeclSpec* Spec, Declaration* D, declmode_t Mode)
                 ConstAbsIntExpr (hie1, &Expr);
                 if (Expr.IVal <= 0) {
                     if (D->Ident[0] != '\0') {
-                        Error ("Size of array `%s' is invalid", D->Ident);
+                        Error ("Size of array '%s' is invalid", D->Ident);
                     } else {
                         Error ("Size of array is invalid");
                     }
@@ -1531,16 +1532,16 @@ static void Declarator (const DeclSpec* Spec, Declaration* D, declmode_t Mode)
 
     /* If we have remaining qualifiers, flag them as invalid */
     if (Qualifiers & T_QUAL_NEAR) {
-        Error ("Invalid `__near__' qualifier");
+        Error ("Invalid '__near__' qualifier");
     }
     if (Qualifiers & T_QUAL_FAR) {
-        Error ("Invalid `__far__' qualifier");
+        Error ("Invalid '__far__' qualifier");
     }
     if (Qualifiers & T_QUAL_FASTCALL) {
-        Error ("Invalid `__fastcall__' qualifier");
+        Error ("Invalid '__fastcall__' qualifier");
     }
     if (Qualifiers & T_QUAL_CDECL) {
-        Error ("Invalid `__cdecl__' qualifier");
+        Error ("Invalid '__cdecl__' qualifier");
     }
 }
 
@@ -1634,7 +1635,7 @@ void ParseDecl (const DeclSpec* Spec, Declaration* D, declmode_t Mode)
             ** have the C89 standard enabled explicitly.
             */
             if (IS_Get (&Standard) >= STD_C99) {
-                Warning ("Implicit `int' return type is an obsolete feature");
+                Warning ("Implicit 'int' return type is an obsolete feature");
             }
             GetFuncDesc (D->Type)->Flags |= FD_OLDSTYLE_INTRET;
         }
@@ -1650,7 +1651,7 @@ void ParseDecl (const DeclSpec* Spec, Declaration* D, declmode_t Mode)
         ** for variables with implicit int type.
         */
         if ((Spec->Flags & DS_DEF_TYPE) != 0 && IS_Get (&Standard) >= STD_C99) {
-            Warning ("Implicit `int' is an obsolete feature");
+            Warning ("Implicit 'int' is an obsolete feature");
         }
     }
 
@@ -1659,7 +1660,7 @@ void ParseDecl (const DeclSpec* Spec, Declaration* D, declmode_t Mode)
         unsigned Size = SizeOf (D->Type);
         if (Size >= 0x10000) {
             if (D->Ident[0] != '\0') {
-                Error ("Size of `%s' is invalid (0x%06X)", D->Ident, Size);
+                Error ("Size of '%s' is invalid (0x%06X)", D->Ident, Size);
             } else {
                 Error ("Invalid size in declaration (0x%06X)", Size);
             }
@@ -1732,7 +1733,7 @@ static unsigned OpeningCurlyBraces (unsigned BracesNeeded)
         NextToken ();
     }
     if (BraceCount < BracesNeeded) {
-        Error ("`{' expected");
+        Error ("'{' expected");
     }
     return BraceCount;
 }
@@ -1752,7 +1753,7 @@ static void ClosingCurlyBraces (unsigned BracesExpected)
             NextToken ();
             NextToken ();
         } else {
-            Error ("`}' expected");
+            Error ("'}' expected");
             return;
         }
         --BracesExpected;

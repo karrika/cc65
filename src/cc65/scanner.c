@@ -347,16 +347,8 @@ static int ParseChar (void)
                     Error ("Octal character constant out of range");
                 break;
             default:
-                Error ("Illegal character constant");
-                C = ' ';
-                /* Try to do error recovery, otherwise the compiler will spit
-                ** out thousands of errors in this place and abort.
-                */
-                if (CurC != '\'' && CurC != '\0') {
-                    while (NextC != '\'' && NextC != '\"' && NextC != '\0') {
-                        NextChar ();
-                    }
-                }
+                C = CurC;
+                Error ("Illegal escaped character: 0x%02X", CurC);
                 break;
         }
     } else {
@@ -385,7 +377,7 @@ static void CharConst (void)
 
     /* Check for closing quote */
     if (CurC != '\'') {
-        Error ("`\'' expected");
+        Error ("'\'' expected");
     } else {
         /* Skip the quote */
         NextChar ();
@@ -472,8 +464,8 @@ static void NumericConst (void)
     unsigned DigitVal;
     unsigned long IVal;         /* Value */
 
-    /* Check for a leading hex or octal prefix and determine the possible
-    ** integer types.
+    /* Check for a leading hex, octal or binary prefix and determine the
+    ** possible integer types.
     */
     if (CurC == '0') {
         /* Gobble 0 and examine next char */
@@ -481,6 +473,9 @@ static void NumericConst (void)
         if (toupper (CurC) == 'X') {
             Base = Prefix = 16;
             NextChar ();        /* gobble "x" */
+        } else if (toupper (CurC) == 'B' && IS_Get (&Standard) >= STD_CC65) {
+            Base = Prefix = 2;
+            NextChar ();        /* gobble 'b' */
         } else {
             Base = 10;          /* Assume 10 for now - see below */
             Prefix = 8;         /* Actual prefix says octal */
@@ -1052,7 +1047,7 @@ int Consume (token_t Token, const char* ErrorMsg)
 int ConsumeColon (void)
 /* Check for a colon and skip it. */
 {
-    return Consume (TOK_COLON, "`:' expected");
+    return Consume (TOK_COLON, "':' expected");
 }
 
 
@@ -1065,7 +1060,7 @@ int ConsumeSemi (void)
         NextToken ();
         return 1;
     } else {
-        Error ("`;' expected");
+        Error ("';' expected");
         if (CurTok.Tok == TOK_COLON || CurTok.Tok == TOK_COMMA) {
             NextToken ();
         }
@@ -1083,7 +1078,7 @@ int ConsumeComma (void)
         NextToken ();
         return 1;
     } else {
-        Error ("`,' expected");
+        Error ("',' expected");
         if (CurTok.Tok == TOK_SEMI) {
             NextToken ();
         }
@@ -1096,7 +1091,7 @@ int ConsumeComma (void)
 int ConsumeLParen (void)
 /* Check for a left parenthesis and skip it */
 {
-    return Consume (TOK_LPAREN, "`(' expected");
+    return Consume (TOK_LPAREN, "'(' expected");
 }
 
 
@@ -1104,7 +1099,7 @@ int ConsumeLParen (void)
 int ConsumeRParen (void)
 /* Check for a right parenthesis and skip it */
 {
-    return Consume (TOK_RPAREN, "`)' expected");
+    return Consume (TOK_RPAREN, "')' expected");
 }
 
 
@@ -1112,7 +1107,7 @@ int ConsumeRParen (void)
 int ConsumeLBrack (void)
 /* Check for a left bracket and skip it */
 {
-    return Consume (TOK_LBRACK, "`[' expected");
+    return Consume (TOK_LBRACK, "'[' expected");
 }
 
 
@@ -1120,7 +1115,7 @@ int ConsumeLBrack (void)
 int ConsumeRBrack (void)
 /* Check for a right bracket and skip it */
 {
-    return Consume (TOK_RBRACK, "`]' expected");
+    return Consume (TOK_RBRACK, "']' expected");
 }
 
 
@@ -1128,7 +1123,7 @@ int ConsumeRBrack (void)
 int ConsumeLCurly (void)
 /* Check for a left curly brace and skip it */
 {
-    return Consume (TOK_LCURLY, "`{' expected");
+    return Consume (TOK_LCURLY, "'{' expected");
 }
 
 
@@ -1136,5 +1131,5 @@ int ConsumeLCurly (void)
 int ConsumeRCurly (void)
 /* Check for a right curly brace and skip it */
 {
-    return Consume (TOK_RCURLY, "`}' expected");
+    return Consume (TOK_RCURLY, "'}' expected");
 }

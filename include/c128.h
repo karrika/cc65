@@ -141,6 +141,7 @@ extern void c128_joy_mou[];
 extern void c128_inkwell_mou[];
 extern void c128_pot_mou[];
 extern void c128_swlink_ser[];
+extern void c128_hi_tgi[];
 extern void c128_vdc_tgi[];     /* Referred to by tgi_static_stddrv[] */
 extern void c128_vdc2_tgi[];
 
@@ -167,7 +168,8 @@ void fast (void);
 void slow (void);
 /* Switch the CPU into 1MHz mode. */
 
-
+unsigned char isfast (void);
+/* Returns 1 if the CPU is in 2MHz mode. */
 
 /* End of c128.h */
 #endif

@@ -151,12 +151,12 @@ static void OptTarget (const char* Opt attribute ((unused)), const char* Arg)
             break;
 
         case TGT_UNKNOWN:
-            AbEnd ("Unknown target system `%s'", Arg);
+            AbEnd ("Unknown target system '%s'", Arg);
             break;
 
         default:
             /* Target is known but unsupported */
-            AbEnd ("Unsupported target system `%s'", Arg);
+            AbEnd ("Unsupported target system '%s'", Arg);
             break;
     }
 }
@@ -861,7 +861,7 @@ static char *filterInput (FILE *F, char *tbl)
         }
         if (a == EOF) {
             tbl[i] = '\0';
-            xrealloc (tbl, i + 1);
+            tbl = xrealloc (tbl, i + 1);
             break;
         }
         if (IsSpace (a)) {

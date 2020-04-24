@@ -1,7 +1,7 @@
 /* expr.c
 **
 ** 1998-06-21, Ullrich von Bassewitz
-** 2017-12-05, Greg King
+** 2020-01-25, Greg King
 */
 
 
@@ -278,9 +278,9 @@ static void WarnConstCompareResult (void)
 
 
 static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
-/* Parse a function parameter list and pass the parameters to the called
-** function. Depending on several criteria this may be done by just pushing
-** each parameter separately, or creating the parameter frame once and then
+/* Parse a function parameter list, and pass the parameters to the called
+** function. Depending on several criteria, this may be done by just pushing
+** each parameter separately, or creating the parameter frame once, and then
 ** storing into this frame.
 ** The function returns the size of the parameters pushed.
 */
@@ -322,7 +322,7 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
 
         /* Do we have more than one parameter in the frame? */
         if (FrameParams > 1) {
-            /* Okeydokey, setup the frame */
+            /* Okeydokey, set up the frame */
             FrameOffs = StackPtr;
             g_space (FrameSize);
             StackPtr -= FrameSize;
@@ -343,7 +343,7 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
         /* Fetch the pointer to the next argument, check for too many args */
         if (ParamCount <= Func->ParamCount) {
             /* Beware: If there are parameters with identical names, they
-            ** cannot go into the same symbol table, which means that in this
+            ** cannot go into the same symbol table, which means that, in this
             ** case of errorneous input, the number of nodes in the symbol
             ** table and ParamCount are NOT equal. We have to handle this case
             ** below to avoid segmentation violations. Since we know that this
@@ -359,12 +359,12 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
                 CHECK ((Param->Flags & SC_PARAM) != 0);
             }
         } else if (!Ellipsis) {
-            /* Too many arguments. Do we have an open param list? */
-            if ((Func->Flags & FD_VARIADIC) == 0) {
+            /* Too many arguments. Do we have an open or empty param. list? */
+            if ((Func->Flags & (FD_VARIADIC | FD_EMPTY)) == 0) {
                 /* End of param list reached, no ellipsis */
                 Error ("Too many arguments in function call");
             }
-            /* Assume an ellipsis even in case of errors to avoid an error
+            /* Assume an ellipsis even in case of errors, to avoid an error
             ** message for each other argument.
             */
             Ellipsis = 1;
@@ -373,7 +373,7 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
         /* Evaluate the parameter expression */
         hie1 (&Expr);
 
-        /* If we don't have an argument spec, accept anything, otherwise
+        /* If we don't have an argument spec., accept anything; otherwise,
         ** convert the actual argument to the type needed.
         */
         Flags = CF_NONE;
@@ -401,8 +401,9 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
         Flags |= TypeOf (Expr.Type);
 
         /* If this is a fastcall function, don't push the last argument */
-        if (ParamCount != Func->ParamCount || !IsFastcall) {
+        if ((CurTok.Tok == TOK_COMMA && NextTok.Tok != TOK_RPAREN) || !IsFastcall) {
             unsigned ArgSize = sizeofarg (Flags);
+
             if (FrameSize > 0) {
                 /* We have the space already allocated, store in the frame.
                 ** Because of invalid type conversions (that have produced an
@@ -432,6 +433,12 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
             break;
         }
         NextToken ();
+
+        /* Check for stray comma */
+        if (CurTok.Tok == TOK_RPAREN) {
+            Error ("Argument expected after comma");
+            break;
+        }
     }
 
     /* Check if we had enough parameters */
@@ -440,11 +447,11 @@ static unsigned FunctionParamList (FuncDesc* Func, int IsFastcall)
     }
 
     /* The function returns the size of all parameters pushed onto the stack.
-    ** However, if there are parameters missing (which is an error and was
-    ** flagged by the compiler) AND a stack frame was preallocated above,
-    ** we would loose track of the stackpointer and generate an internal error
+    ** However, if there are parameters missing (which is an error, and was
+    ** flagged by the compiler), AND a stack frame was preallocated above,
+    ** we would loose track of the stackpointer, and generate an internal error
     ** later. So we correct the value by the parameters that should have been
-    ** pushed to avoid an internal compiler error. Since an error was
+    ** pushed, to avoid an internal compiler error. Since an error was
     ** generated before, no code will be output anyway.
     */
     return ParamSize + FrameSize;
@@ -472,8 +479,14 @@ static void FunctionCall (ExprDesc* Expr)
     /* Handle function pointers transparently */
     IsFuncPtr = IsTypeFuncPtr (Expr->Type);
     if (IsFuncPtr) {
-        /* Check whether it's a fastcall function that has parameters */
-        IsFastcall = (Func->Flags & FD_VARIADIC) == 0 && Func->ParamCount > 0 &&
+        /* Check whether it's a fastcall function that has parameters.
+        ** Note: if a function is forward-declared in the old K & R style, then
+        ** it may be called with any number of arguments, even though its
+        ** parameter count is zero.  Handle K & R functions as though there are
+        ** parameters.
+        */
+        IsFastcall = (Func->Flags & FD_VARIADIC) == 0 &&
+            (Func->ParamCount > 0 || (Func->Flags & FD_EMPTY)) &&
             (AutoCDecl ?
              IsQualFastcall (Expr->Type + 1) :
              !IsQualCDecl (Expr->Type + 1));
@@ -696,6 +709,23 @@ static void Primary (ExprDesc* E)
 
     switch (CurTok.Tok) {
 
+        case TOK_BOOL_AND:
+            /* A computed goto label address */
+            if (IS_Get (&Standard) >= STD_CC65) {
+                SymEntry* Entry;
+                NextToken ();
+                Entry = AddLabelSym (CurTok.Ident, SC_REF | SC_GOTO_IND);
+                /* output its label */
+                E->Flags = E_RTYPE_RVAL | E_LOC_STATIC;
+                E->Name = Entry->V.L.Label;
+                E->Type = PointerTo (type_void);
+                NextToken ();
+            } else {
+                Error ("Computed gotos are a C extension, not supported with this --standard");
+                ED_MakeConstAbsInt (E, 1);
+            }
+            break;
+
         case TOK_IDENT:
             /* Identifier. Get a pointer to the symbol table entry */
             Sym = E->Sym = FindSym (CurTok.Ident);
@@ -757,7 +787,7 @@ static void Primary (ExprDesc* E)
                         E->Name = (uintptr_t) Sym->Name;
                     } else {
                         E->Flags = E_LOC_STATIC | E_RTYPE_LVAL;
-                        E->Name = Sym->V.Label;
+                        E->Name = Sym->V.L.Label;
                     }
                 } else {
                     /* Local static variable */
@@ -791,9 +821,9 @@ static void Primary (ExprDesc* E)
                     ** list and returning int.
                     */
                     if (IS_Get (&Standard) >= STD_C99) {
-                        Error ("Call to undefined function `%s'", Ident);
+                        Error ("Call to undefined function '%s'", Ident);
                     } else {
-                        Warning ("Call to undefined function `%s'", Ident);
+                        Warning ("Call to undefined function '%s'", Ident);
                     }
                     Sym = AddGlobalSym (Ident, GetImplicitFuncType(), SC_EXTERN | SC_REF | SC_FUNC);
                     E->Type  = Sym->Type;
@@ -804,7 +834,7 @@ static void Primary (ExprDesc* E)
                     Sym = AddLocalSym (Ident, type_int, SC_AUTO | SC_REF, 0);
                     E->Flags = E_LOC_STACK | E_RTYPE_LVAL;
                     E->Type = type_int;
-                    Error ("Undefined symbol: `%s'", Ident);
+                    Error ("Undefined symbol: '%s'", Ident);
                 }
 
             }
@@ -1174,7 +1204,7 @@ static void StructRef (ExprDesc* Expr)
     NextToken ();
     Field = FindStructField (Expr->Type, Ident);
     if (Field == 0) {
-        Error ("Struct/union has no field named `%s'", Ident);
+        Error ("Struct/union has no field named '%s'", Ident);
         /* Make the expression an integer at address zero */
         ED_MakeConstAbs (Expr, 0, type_int);
         return;
@@ -2485,7 +2515,7 @@ static void parseadd (ExprDesc* Expr)
                 typeadjust (Expr, &Expr2, 1);
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `+'");
+                Error ("Invalid operands for binary operator '+'");
             }
 
         } else {
@@ -2567,7 +2597,7 @@ static void parseadd (ExprDesc* Expr)
                 }
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `+'");
+                Error ("Invalid operands for binary operator '+'");
                 flags = CF_INT;
             }
 
@@ -2611,7 +2641,7 @@ static void parseadd (ExprDesc* Expr)
                 flags = typeadjust (Expr, &Expr2, 1);
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `+'");
+                Error ("Invalid operands for binary operator '+'");
                 flags = CF_INT;
             }
 
@@ -2653,7 +2683,7 @@ static void parseadd (ExprDesc* Expr)
                 flags = typeadjust (Expr, &Expr2, 0) & ~CF_CONST;
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `+'");
+                Error ("Invalid operands for binary operator '+'");
                 flags = CF_INT;
             }
 
@@ -2689,7 +2719,7 @@ static void parsesub (ExprDesc* Expr)
 
     /* lhs cannot be function or pointer to function */
     if (IsTypeFunc (Expr->Type) || IsTypeFuncPtr (Expr->Type)) {
-        Error ("Invalid left operand for binary operator `-'");
+        Error ("Invalid left operand for binary operator '-'");
         /* Make it pointer to char to avoid further errors */
         Expr->Type = type_uchar;
     }
@@ -2712,7 +2742,7 @@ static void parsesub (ExprDesc* Expr)
 
     /* rhs cannot be function or pointer to function */
     if (IsTypeFunc (Expr2.Type) || IsTypeFuncPtr (Expr2.Type)) {
-        Error ("Invalid right operand for binary operator `-'");
+        Error ("Invalid right operand for binary operator '-'");
         /* Make it pointer to char to avoid further errors */
         Expr2.Type = type_uchar;
     }
@@ -2750,7 +2780,7 @@ static void parsesub (ExprDesc* Expr)
                 Expr->IVal -= Expr2.IVal;
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `-'");
+                Error ("Invalid operands for binary operator '-'");
             }
 
             /* Result is constant, condition codes not set */
@@ -2783,7 +2813,7 @@ static void parsesub (ExprDesc* Expr)
                 flags = typeadjust (Expr, &Expr2, 1);
             } else {
                 /* OOPS */
-                Error ("Invalid operands for binary operator `-'");
+                Error ("Invalid operands for binary operator '-'");
                 flags = CF_INT;
             }
 
@@ -2837,7 +2867,7 @@ static void parsesub (ExprDesc* Expr)
             flags = typeadjust (Expr, &Expr2, 0);
         } else {
             /* OOPS */
-            Error ("Invalid operands for binary operator `-'");
+            Error ("Invalid operands for binary operator '-'");
             flags = CF_INT;
         }
 
@@ -3304,7 +3334,7 @@ static void opeq (const GenDesc* Gen, ExprDesc* Expr, const char* Op)
 
     /* The rhs must be an integer (or a float, but we don't support that yet */
     if (!IsClassInt (Expr2.Type)) {
-        Error ("Invalid right operand for binary operator `%s'", Op);
+        Error ("Invalid right operand for binary operator '%s'", Op);
         /* Continue. Wrong code will be generated, but the compiler won't
         ** break, so this is the best error recovery.
         */
@@ -3421,7 +3451,7 @@ static void addsubeq (const GenDesc* Gen, ExprDesc *Expr, const char* Op)
     */
     hie1 (&Expr2);
     if (!IsClassInt (Expr2.Type)) {
-        Error ("Invalid right operand for binary operator `%s'", Op);
+        Error ("Invalid right operand for binary operator '%s'", Op);
         /* Continue. Wrong code will be generated, but the compiler won't
         ** break, so this is the best error recovery.
         */
